@@ -1,5 +1,5 @@
 # GxBottleRocket.lv2
-Analouge simulation of a tube preamp
+Analogue simulation of a tube preamp
 
 
 ![GxBottleRocket](https://github.com/brummer10/GxBottleRocket.lv2/raw/master/GxBottleRocket.png)
