@@ -41,7 +41,7 @@
 
 <http://guitarix.sourceforge.net/plugins/gx_bottlerocket_#_bottlerocket_>
     a lv2:Plugin ,
-        lv2:AmplifierPlugin ;
+        lv2:DistortionPlugin ;
     doap:maintainer <http://guitarix.sourceforge.net#me> ;
     doap:name "GxBottleRocket";
     doap:license <http://opensource.org/licenses/isc> ;
