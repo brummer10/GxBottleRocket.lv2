@@ -54,6 +54,14 @@ all : check $(NAME)
 	else echo $(RED)"sorry, build failed"; fi
 	@echo $(NONE)
 
+mod : check nogui
+	@mkdir -p ./$(BUNDLE)
+	@cp -R ./MOD/* ./$(BUNDLE)
+	@mv ./*.so ./$(BUNDLE)
+	@if [ -f ./$(BUNDLE)/$(NAME).so ]; then echo $(BLUE)"build finish, now run make install"; \
+	else echo $(RED)"sorry, build failed"; fi
+	@echo $(NONE)
+
 check :
 ifdef ARMCPU
 	@echo $(RED)ARM CPU DEDECTED, please check the optimization flags
