@@ -55,9 +55,7 @@
     mod:label "GxBottleRocket" ;
     
 rdfs:comment """
-
-...
-
+Analogue simulation of a tube preamp pedal
 """;
 
     lv2:port  [
