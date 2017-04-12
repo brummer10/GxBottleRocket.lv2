@@ -9,7 +9,7 @@
         modgui:screenshot <modgui/screenshot-gxbottlerocket.png> ;
         modgui:thumbnail <modgui/thumbnail-gxbottlerocket.png> ;
         modgui:brand "Guitarix " ;
-        modgui:label "GxHotBox" ;
+        modgui:label "GxBottleRocket" ;
         modgui:model "boxy" ;
         modgui:panel "4-knobs" ;
         modgui:color "bottlerocket" ;
