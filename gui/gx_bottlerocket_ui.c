@@ -15,6 +15,7 @@ struct gx_args;
 typedef struct {
     LV2UI_Write_Function write;
     LV2UI_Controller     controller;
+    int block;
 
     GtkWidget* pbox;
     GtkWidget* box;
@@ -44,6 +45,10 @@ static void ref_value_changed(GtkAdjustment *adj, gpointer* args) {
 
     gx_args * arg = (gx_args*)args;
     gx_bottlerocketUI* ui = (gx_bottlerocketUI*)arg->ui;
+    if (ui->block) {
+        ui->block = 0;
+        return;
+    }
     int port_index = arg->port_index;
     float value = gtk_adjustment_get_value(adj);
     ui->write(ui->controller, (PortIndex)port_index, sizeof(float), 0,
@@ -61,6 +66,7 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor*   descriptor,
     gx_bottlerocketUI* ui = (gx_bottlerocketUI*)malloc(sizeof(gx_bottlerocketUI));
     ui->write       = write_function;
     ui->controller  = controller;
+    ui->block       = 0;
     ui->pbox        = NULL;
     ui->pf1box      = NULL;
     ui->box         = NULL;
@@ -281,6 +287,7 @@ static void port_event(LV2UI_Handle handle,
     gx_bottlerocketUI* ui = (gx_bottlerocketUI*)handle;
     if ( format == 0 ) {
         float *value = (float*)buffer;
+        ui->block = 1;
         if (port_index == 2) {
             gtk_adjustment_set_value(GTK_ADJUSTMENT(ui->bp_adj), (gdouble) (*value));
         } else {
