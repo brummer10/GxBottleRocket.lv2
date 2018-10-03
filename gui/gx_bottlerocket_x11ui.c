@@ -166,6 +166,12 @@ cairo_status_t png_stream_reader (void *_stream, unsigned char *data, unsigned i
 	return CAIRO_STATUS_SUCCESS;
 }
 
+cairo_surface_t *cairo_image_surface_create_from_stream (gx_bottlerocketUI* ui, const unsigned char* name) {
+	ui->png_stream.data = name;
+	ui->png_stream.position = 0;
+	return cairo_image_surface_create_from_png_stream(&png_stream_reader, (void *)&ui->png_stream);
+}
+
 // init the xwindow and return the LV2UI handle
 static LV2UI_Handle instantiate(const struct _LV2UI_Descriptor * descriptor,
 			const char * plugin_uri, const char * bundle_path,
@@ -212,9 +218,7 @@ static LV2UI_Handle instantiate(const struct _LV2UI_Descriptor * descriptor,
 	ui->controls[4] = { 0.5, 0.5, 0.0, 1.0, 0.01, 330, 60, 61, 61, false,"VOLUME", KNOB, VOLUME};
 
 
-	ui->png_stream.data = LDVAR(pedal_png);
-	ui->png_stream.position = 0;
-	ui->pedal = cairo_image_surface_create_from_png_stream(&png_stream_reader, (void *)&ui->png_stream);
+	ui->pedal = cairo_image_surface_create_from_stream(ui, LDVAR(pedal_png));
 	ui->init_width = cairo_image_surface_get_width(ui->pedal);
 	ui->height = ui->init_height = cairo_image_surface_get_height(ui->pedal);
 	ui->width = ui->init_width -140 + (70 * CONTROLS);
@@ -240,17 +244,9 @@ static LV2UI_Handle instantiate(const struct _LV2UI_Descriptor * descriptor,
 	ui->frame = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, 61, 81);
 	ui->crf = cairo_create (ui->frame);
 
-	ui->png_stream.data = LDVAR(pswitch_on_png);
-	ui->png_stream.position = 0;
-	ui->pswitch_on = cairo_image_surface_create_from_png_stream(&png_stream_reader, (void *)&ui->png_stream);
-
-	ui->png_stream.data = LDVAR(pswitch_off_png);
-	ui->png_stream.position = 0;
-	ui->pswitch_off = cairo_image_surface_create_from_png_stream(&png_stream_reader, (void *)&ui->png_stream);
-
-	ui->png_stream.data = LDVAR(frame_png);
-	ui->png_stream.position = 0;
-	ui->frame1 = cairo_image_surface_create_from_png_stream(&png_stream_reader, (void *)&ui->png_stream);
+	ui->pswitch_on = cairo_image_surface_create_from_stream(ui, LDVAR(pswitch_on_png));
+	ui->pswitch_off = cairo_image_surface_create_from_stream(ui, LDVAR(pswitch_off_png));
+	ui->frame1 = cairo_image_surface_create_from_stream(ui, LDVAR(frame_png));
 
 	*widget = (void*)ui->win;
 
@@ -531,19 +527,30 @@ static void controller_expose(gx_bottlerocketUI *ui, gx_controller * control) {
 	cairo_paint (ui->cr);
 }
 
-// recive port changes from host
-static void port_event(LV2UI_Handle handle, uint32_t port_index,
-						uint32_t buffer_size, uint32_t format,
-						const void * buffer) {
-	gx_bottlerocketUI* ui = (gx_bottlerocketUI*)handle;
-	float value = *(float*)buffer;
-	for (int i=0;i<CONTROLS;i++) {
-		if (port_index == ui->controls[i].port) {
-			if (fabs(value - ui->controls[i].adj.value)>=0.00001) {
-				ui->controls[i].adj.value = value;
-				controller_expose(ui, &ui->controls[i]);
-			}
-		}
+// send event when active controller changed
+static void send_controller_event(gx_bottlerocketUI *ui, int controller) {
+	XClientMessageEvent xevent;
+	xevent.type = ClientMessage;
+	xevent.message_type = ui->DrawController;
+	xevent.display = ui->dpy;
+	xevent.window = ui->win;
+	xevent.format = 16;
+	xevent.data.l[0] = controller;
+	XSendEvent(ui->dpy, ui->win, 0, 0, (XEvent *)&xevent);
+}
+
+static void check_value_changed(gx_bottlerocketUI *ui, int i, float* value) {
+	if(fabs(*(value) - ui->controls[i].adj.value)>=0.00001) {
+		ui->controls[i].adj.value = *(value);
+		ui->write_function(ui->controller,ui->controls[i].port,sizeof(float),0,value);
+		send_controller_event(ui, i);
+	}
+}
+
+static void check_is_active(gx_bottlerocketUI *ui, int i, bool set) {
+	if (ui->controls[i].is_active != set) {
+		ui->controls[i].is_active = set;
+		send_controller_event(ui, i);
 	}
 }
 
@@ -557,16 +564,17 @@ bool aligned(int x, int y, gx_controller *control, gx_bottlerocketUI *ui) {
 	  && (y >= ay ) && (y <= ah)) ? true : false;
 }
 
-// send event when active controller changed
-static void send_controller_event(gx_bottlerocketUI *ui, int controller) {
-	XClientMessageEvent xevent;
-	xevent.type = ClientMessage;
-	xevent.message_type = ui->DrawController;
-	xevent.display = ui->dpy;
-	xevent.window = ui->win;
-	xevent.format = 16;
-	xevent.data.l[0] = controller;
-	XSendEvent(ui->dpy, ui->win, 0, 0, (XEvent *)&xevent);
+// recive port changes from host
+static void port_event(LV2UI_Handle handle, uint32_t port_index,
+						uint32_t buffer_size, uint32_t format,
+						const void * buffer) {
+	gx_bottlerocketUI* ui = (gx_bottlerocketUI*)handle;
+	float value = *(float*)buffer;
+	for (int i=0;i<CONTROLS;i++) {
+		if (port_index == ui->controls[i].port) {
+			check_value_changed(ui, i, &value);
+		}
+	}
 }
 
 // resize the xwindow and the cairo xlib surface
@@ -575,7 +583,7 @@ static void resize_event(gx_bottlerocketUI *ui) {
 	XGetWindowAttributes(ui->dpy, (Window)ui->parentXwindow, &attrs);
 	ui->width = attrs.width;
 	ui->height = attrs.height;
-	XMoveResizeWindow (ui->dpy,ui->win , 0, 0, ui->width, ui->height);
+	XResizeWindow (ui->dpy,ui->win ,ui->width, ui->height);
 	cairo_xlib_surface_set_size( ui->surface, ui->width, ui->height);
 	ui->rescale.x  = (double)ui->width/ui->init_width;
 	ui->rescale.y  = (double)ui->height/ui->init_height;
@@ -594,32 +602,18 @@ static void scroll_event(gx_bottlerocketUI *ui, int direction) {
 		if (aligned(ui->pos_x, ui->pos_y, &ui->controls[i], ui)) {
 			value = min(ui->controls[i].adj.max_value,max(ui->controls[i].adj.min_value, 
 			  ui->controls[i].adj.value + (ui->controls[i].adj.step * direction)));
-			if (ui->controls[i].is_active != true) {
-				ui->controls[i].is_active = true;
-				send_controller_event(ui, i);
-			}
-			if(fabs(value - ui->controls[i].adj.value)>=0.00001) {
-				ui->controls[i].adj.value = value;
-				ui->write_function(ui->controller,ui->controls[i].port,sizeof(float),0,&value);
-				send_controller_event(ui, i);
-			}
+			check_is_active(ui, i, true);
+			check_value_changed(ui, i, &value);
 		} else {
-			if (ui->controls[i].is_active != false) {
-				ui->controls[i].is_active = false;
-				send_controller_event(ui, i);
-			}
+			check_is_active(ui, i, false);
 		}
 	}
 }
 
 // controll is switch, so switch value
-static void switch_event(gx_bottlerocketUI *ui, gx_controller* control) {
-	float value = control->adj.value ? 0.0 : 1.0;
-	if(fabs(value - control->adj.value)>=0.00001) {
-		control->adj.value = value; 
-		ui->write_function(ui->controller,control->port,sizeof(float),0,&value);
-		send_controller_event(ui, control->port);
-	}
+static void switch_event(gx_bottlerocketUI *ui, int i) {
+	float value = ui->controls[i].adj.value ? 0.0 : 1.0;
+	check_value_changed(ui, i, &value);
 }
 
 // left mouse button is pressed, generate a switch event, or set controller active
@@ -627,23 +621,14 @@ static void button1_event(gx_bottlerocketUI *ui, double* start_value) {
 	for (int i=0;i<CONTROLS;i++) {
 		if (aligned(ui->pos_x, ui->pos_y, &ui->controls[i], ui)) {
 			if (ui->controls[i].type == BSWITCH ||ui->controls[i].type == SWITCH) {
-				switch_event(ui, &ui->controls[i]);
-				if (ui->controls[i].is_active != true) {
-					ui->controls[i].is_active = true;
-					send_controller_event(ui, i);
-				}
+				switch_event(ui, i);
+				check_is_active(ui, i, true);
 			} else {
-				if (ui->controls[i].is_active != true) {
-					ui->controls[i].is_active = true;
-					send_controller_event(ui, i);
-				}
+				check_is_active(ui, i, true);
 				*(start_value) = ui->controls[i].adj.value;
 			}
 		} else {
-			if (ui->controls[i].is_active != false) {
-				ui->controls[i].is_active = false;
-				send_controller_event(ui, i);
-			}
+			check_is_active(ui, i, false);
 		}
 	}
 }
@@ -656,11 +641,7 @@ static void set_key_value(gx_bottlerocketUI *ui, int set_value) {
 			if (set_value == 1) value = ui->controls[i].adj.min_value;
 			else if (set_value == 2) value = ui->controls[i].adj.std_value;
 			else if (set_value == 3) value = ui->controls[i].adj.max_value;
-			if(fabs(value - ui->controls[i].adj.value)>=0.00001) {
-				ui->controls[i].adj.value = value;
-				ui->write_function(ui->controller,ui->controls[i].port,sizeof(float),0,&value);
-				send_controller_event(ui, i);
-			}
+			check_value_changed(ui, i, &value);
 		}
 	}
 }
@@ -672,11 +653,7 @@ static void key_event(gx_bottlerocketUI *ui, int direction) {
 		if (ui->controls[i].is_active) {
 			value = min(ui->controls[i].adj.max_value,max(ui->controls[i].adj.min_value, 
 			  ui->controls[i].adj.value + (ui->controls[i].adj.step * direction)));
-			if(fabs(value - ui->controls[i].adj.value)>=0.00001) {
-				ui->controls[i].adj.value = value;
-				ui->write_function(ui->controller,ui->controls[i].port,sizeof(float),0,&value);
-				send_controller_event(ui, i);
-			}
+			check_value_changed(ui, i, &value);
 		}
 	}
 }
@@ -702,10 +679,7 @@ static void set_previous_controller_active(gx_bottlerocketUI *ui) {
 			}
 		}
 	}
-	if (ui->controls[CONTROLS-1].is_active != true) {
-		ui->controls[CONTROLS-1].is_active = true;
-		send_controller_event(ui, CONTROLS-1);
-	}
+	check_is_active(ui, CONTROLS-1, true);
 }
 
 // set next controller active on tab key
@@ -715,6 +689,7 @@ static void set_next_controller_active(gx_bottlerocketUI *ui) {
 			ui->controls[i].is_active = false;
 			send_controller_event(ui, i);
 			if(i<CONTROLS-1) {
+				
 				if (ui->controls[i+1].is_active != true) {
 					ui->controls[i+1].is_active = true;
 					send_controller_event(ui, i+1);
@@ -729,10 +704,7 @@ static void set_next_controller_active(gx_bottlerocketUI *ui) {
 			}
 		}
 	}
-	if (ui->controls[0].is_active != true) {
-		ui->controls[0].is_active = true;
-		send_controller_event(ui, 0);
-	}
+	check_is_active(ui, 0, true);
 }
 
 // get/set active controller on enter and leave notify
@@ -765,11 +737,7 @@ static void motion_event(gx_bottlerocketUI *ui, double start_value, XMotionEvent
 			value = min(ui->controls[i].adj.max_value,max(ui->controls[i].adj.min_value,start_value + 
 			  (((double)(ui->pos_y - mo->y)*scaling*ui->controls[i].adj.step)*
 			  (ui->controls[i].adj.max_value-ui->controls[i].adj.min_value))));
-			if(fabs(value - ui->controls[i].adj.value)>=0.00001) {
-				ui->controls[i].adj.value = value;
-				ui->write_function(ui->controller,ui->controls[i].port,sizeof(float),0,&value);
-				send_controller_event(ui, i);
-			}
+			check_value_changed(ui, i, &value);
 		}
 	}
 	

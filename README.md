@@ -9,8 +9,9 @@ Analogue simulation of a tube preamp
 the following packages are needed to build GxBottleRocket:
 
 - libc6-dev
-- libgtk2.0-dev
-- libstdc++6-dev
+- libcairo2-dev
+- libx11-dev
+- x11proto-dev
 - lv2-dev
 
 note that those packages could have different, but similar names 
