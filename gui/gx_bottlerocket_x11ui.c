@@ -628,7 +628,7 @@ static void scroll_event(gx_bottlerocketUI *ui, int direction) {
 
 // controll is switch, so switch value
 static void switch_event(gx_bottlerocketUI *ui, int i) {
-	float value = ui->controls[i].adj.value ? 0.0 : 1.0;
+	float value = ui->controls[i].adj.value > 0.0 ? 0.0 : 1.0;
 	check_value_changed(ui, i, &value);
 }
 
